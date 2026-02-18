@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>캐릭터 아카이브</title>
     
-    <!-- 1. 필수 라이브러리 (CDN) -->
+    <!-- 1. 필수 라이브러리 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- 2. Firebase 호환성 라이브러리 (가장 안정적) -->
+    <!-- 2. Firebase 라이브러리 -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -34,37 +34,34 @@
             font-size: 12px;
         }
 
-        /* 12px(9pt) 강제 고정 */
         * { font-size: 12px; box-sizing: border-box; }
         
-        /* 예외: 제목 및 강조 */
-        .text-header { font-size: 40px !important; font-weight: 900; letter-spacing: -0.02em; }
+        .text-header { font-size: 36px !important; font-weight: 900; letter-spacing: -0.02em; }
         .text-sub { font-size: 16px !important; font-weight: 700; }
         .text-card { font-size: 14px !important; font-weight: 700; }
 
         .rounded-2xl { border-radius: 1rem !important; }
         .shadow-soft { box-shadow: 0 4px 20px -2px rgba(152, 176, 160, 0.15); }
         
-        /* 연대기 라인 정렬 (정밀 보정) */
+        /* 연대기 스타일 */
         .timeline-wrapper { position: relative; padding-left: 24px; padding-bottom: 32px; }
-        /* 마지막 항목 여백 제거 */
         .timeline-wrapper:last-child { padding-bottom: 0; }
         
         .timeline-line {
             position: absolute;
-            left: 7px; /* (점 16px / 2) - (선 2px / 2) = 7px */
+            left: 7px;
             top: 16px;
-            bottom: 0;
+            bottom: -8px;
             width: 2px;
             background-color: #C8D1CC;
+            z-index: 0;
         }
-        /* 마지막 항목 줄기 제거 */
         .timeline-wrapper:last-child .timeline-line { display: none; }
 
         .timeline-dot {
             position: absolute;
             left: 0;
-            top: 0;
+            top: 2px;
             width: 16px;
             height: 16px;
             background-color: white;
@@ -74,36 +71,35 @@
         }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        button:active { transform: scale(0.98); }
+        button:active { transform: scale(0.95); }
         
-        /* 로딩 표시 */
         #loading {
             position: fixed; inset: 0; background: #F1F5F2; z-index: 9999;
             display: flex; justify-content: center; align-items: center;
             font-size: 14px; font-weight: bold; color: #98B0A0;
         }
+
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); }
     </style>
 </head>
 <body>
-    <div id="loading">서고를 준비하는 중...</div>
+    <div id="loading">서고 정보를 불러오는 중입니다.</div>
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- 1. 아이콘 직접 정의 (로딩 오류 방지) ---
+        const { useState, useEffect, useMemo } = React;
+
         const Icons = {
-            Plus: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>,
-            Trash2: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>,
-            Edit2: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>,
-            ChevronRight: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
-            Share2: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>,
-            Download: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>,
-            Upload: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>,
-            Clock: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
-            FileText: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>,
-            UserCircle: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/></svg>,
-            History: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>,
-            Wifi: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" x2="12.01" y1="20" y2="20"/></svg>,
-            WifiOff: (props) => <svg {...props} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" x2="22" y1="2" y2="22"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" x2="12.01" y1="20" y2="20"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M5 12.55a11 11 0 0 1 14.08 0"/></svg>
+            Plus: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5v14"/></svg>,
+            Trash2: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"/></svg>,
+            ChevronRight: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6"/></svg>,
+            Clock: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>,
+            FileText: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 00 2 2h12a2 2 0 00 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
+            Cloud: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.5 19c0-1.7-1.3-3-3-3h-1.1c-.2-2.3-2.1-4-4.4-4-2.3 0-4.2 1.7-4.4 4H4.5c-1.7 0-3 1.3-3 3s1.3 3 3 3h13c1.7 0 3-1.3 3-3z"/></svg>,
+            Wifi: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12.6a11 11 0 0114.1 0M1.4 9a16 16 0 0121.2 0M8.5 16.1a6 6 0 017 0M12 20h.01"/></svg>,
+            Download: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>,
+            Upload: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>,
+            UserCircle: (p) => <svg {...p} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.7a2 2 0 012-2h6a2 2 0 012 2.1"/></svg>,
         };
 
         const Icon = ({ name, className }) => {
@@ -111,72 +107,54 @@
             return Comp ? <Comp className={className} /> : null;
         };
 
-        const { useState, useEffect, useMemo } = React;
-
-        // --- 2. 데이터 엔진 (하이브리드) ---
-        // Firebase가 실패하면 자동으로 LocalStorage로 전환하여 절대 멈추지 않음
         const DataEngine = {
-            mode: 'local', // 'firebase' or 'local'
-            appId: 'default',
+            mode: 'local',
+            appId: 'my-archive',
             db: null,
 
-            init: function() {
+            init: async function() {
+                const savedConfig = localStorage.getItem('firebase_config_custom');
+                if (savedConfig) await this.connectFirebase(JSON.parse(savedConfig));
+            },
+
+            connectFirebase: async function(config) {
                 try {
-                    // 환경변수에 설정이 있고, Firebase 객체가 로드된 경우에만 시도
-                    if (typeof window.__firebase_config !== 'undefined' && window.firebase) {
-                        const config = JSON.parse(window.__firebase_config);
-                        if (!firebase.apps.length) firebase.initializeApp(config);
+                    if (window.firebase && !firebase.apps.length) firebase.initializeApp(config);
+                    if (window.firebase) {
+                        const auth = firebase.auth();
+                        if (!auth.currentUser) await auth.signInAnonymously();
                         this.db = firebase.firestore();
                         this.mode = 'firebase';
-                        console.log("엔진: 온라인 모드 가동");
-                    } else {
-                        throw new Error("설정 없음");
+                        return true;
                     }
-                } catch (e) {
-                    this.mode = 'local';
-                    console.log("엔진: 오프라인(로컬) 모드 가동");
+                } catch(e) { this.mode = 'local'; return false; }
+                return false;
+            },
+
+            subscribe: function(appId, callback) {
+                this.appId = appId;
+                if (this.mode === 'firebase' && this.db) {
+                    const colPath = `artifacts/${this.appId}/public/data/characters`;
+                    return this.db.collection(colPath).onSnapshot(snapshot => {
+                        const fetched = {};
+                        snapshot.forEach(doc => {
+                            const d = doc.data();
+                            const group = d.mythName || '미분류';
+                            if (!fetched[group]) fetched[group] = [];
+                            fetched[group].push({ ...d, id: doc.id });
+                        });
+                        callback(fetched, true);
+                    }, err => { callback(this.getLocalData(appId), false); });
+                } else {
+                    callback(this.getLocalData(appId), false);
+                    const handler = () => callback(this.getLocalData(appId), false);
+                    window.addEventListener(`local-update-${appId}`, handler);
+                    return () => window.removeEventListener(`local-update-${appId}`, handler);
                 }
             },
 
-            // 데이터 구독 (핵심)
-            subscribe: function(appId, callback) {
-                this.appId = appId || 'default';
-                
-                // 1. Firebase 시도
-                if (this.mode === 'firebase' && this.db) {
-                    try {
-                        return this.db.collection('artifacts').doc(this.appId).collection('public').doc('data').collection('characters')
-                            .onSnapshot(snapshot => {
-                                const fetched = {};
-                                snapshot.forEach(doc => {
-                                    const d = doc.data();
-                                    const group = d.mythName || '미분류';
-                                    if (!fetched[group]) fetched[group] = [];
-                                    fetched[group].push({ ...d, id: doc.id });
-                                });
-                                callback(fetched, true); // true = online status
-                            }, err => {
-                                console.warn("연결 끊김, 로컬로 전환:", err);
-                                callback(this.getLocalData(this.appId), false);
-                            });
-                    } catch (e) {
-                        // 에러나면 바로 로컬 데이터 반환
-                        callback(this.getLocalData(this.appId), false);
-                        return () => {};
-                    }
-                } 
-                
-                // 2. 로컬 모드 (기본)
-                callback(this.getLocalData(this.appId), false);
-                const handler = () => callback(this.getLocalData(this.appId), false);
-                window.addEventListener(`local-update-${this.appId}`, handler);
-                return () => window.removeEventListener(`local-update-${this.appId}`, handler);
-            },
-
             getLocalData: function(id) {
-                try {
-                    return JSON.parse(localStorage.getItem(`archive_${id}`)) || {};
-                } catch(e) { return {}; }
+                try { return JSON.parse(localStorage.getItem(`archive_${id}`)) || {}; } catch(e) { return {}; }
             },
 
             saveLocalData: function(id, data) {
@@ -184,46 +162,27 @@
                 window.dispatchEvent(new Event(`local-update-${id}`));
             },
 
-            // 저장 (하이브리드 쓰기)
-            save: async function(id, data, isDelete = false) {
-                // A. 로컬 저장은 무조건 수행 (백업)
+            performAction: async function(id, data, isDelete = false) {
+                // 1. 로컬 저장소 즉시 반영
                 const current = this.getLocalData(this.appId);
-                // 삭제 처리
                 for (const group in current) {
                     current[group] = current[group].filter(c => c.id !== id);
                     if(current[group].length === 0) delete current[group];
                 }
-                // 추가/수정 처리
-                if (!isDelete) {
+                if (!isDelete && data) {
                     const group = data.mythName || '미분류';
                     if(!current[group]) current[group] = [];
                     current[group].push({ ...data, id });
                 }
                 this.saveLocalData(this.appId, current);
 
-                // B. Firebase 저장 (가능하다면)
+                // 2. 파이어베이스 반영
                 if (this.mode === 'firebase' && this.db) {
                     try {
-                        const ref = this.db.collection('artifacts').doc(this.appId).collection('public').doc('data').collection('characters').doc(id);
-                        if (isDelete) await ref.delete();
-                        else await ref.set(data);
-                    } catch(e) { console.warn("클라우드 동기화 실패 (로컬엔 저장됨)"); }
-                }
-            },
-            
-            import: async function(importedData) {
-                // 로컬 저장
-                this.saveLocalData(this.appId, importedData);
-                // 클라우드 업로드 시도
-                if (this.mode === 'firebase' && this.db) {
-                    try {
-                        const batch = this.db.batch();
-                        const col = this.db.collection('artifacts').doc(this.appId).collection('public').doc('data').collection('characters');
-                        Object.values(importedData).flat().forEach(c => {
-                            batch.set(col.doc(c.id || Date.now().toString()), c);
-                        });
-                        await batch.commit();
-                    } catch(e) {}
+                        const docRef = this.db.collection(`artifacts/${this.appId}/public/data/characters`).doc(id);
+                        if (isDelete) await docRef.delete();
+                        else await docRef.set(data);
+                    } catch(e) { console.error("Cloud Error:", e); }
                 }
             }
         };
@@ -234,28 +193,30 @@
             const [appId, setAppId] = useState('my-archive');
             const [tempAppId, setTempAppId] = useState('');
             const [isOnline, setIsOnline] = useState(false);
+            const [showConfig, setShowConfig] = useState(false);
+            const [configInput, setConfigInput] = useState('');
 
-            // 폼 상태
             const [form, setForm] = useState({ mythName: '', name: '', summary: '' });
             const [selectedChar, setSelectedChar] = useState(null);
             const [isEditing, setIsEditing] = useState(false);
             const [editForm, setEditForm] = useState({});
+            
             const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
             const [logText, setLogText] = useState('');
 
-            // 초기화
-            useEffect(() => {
-                // 로딩 화면 제거
-                const loader = document.getElementById('loading');
-                if(loader) loader.style.display = 'none';
+            const [deleteTarget, setDeleteTarget] = useState(null);
 
-                const initId = (typeof window !== 'undefined' && window.__app_id) || localStorage.getItem('last_app_id') || 'my-archive';
-                setAppId(initId);
-                setTempAppId(initId);
-                DataEngine.init();
+            useEffect(() => {
+                const init = async () => {
+                    await DataEngine.init();
+                    document.getElementById('loading').style.display = 'none';
+                    const lastId = localStorage.getItem('last_app_id') || 'my-archive';
+                    setAppId(lastId);
+                    setTempAppId(lastId);
+                };
+                init();
             }, []);
 
-            // 구독
             useEffect(() => {
                 const unsubscribe = DataEngine.subscribe(appId, (newData, status) => {
                     setData(newData);
@@ -265,95 +226,81 @@
                 return unsubscribe;
             }, [appId]);
 
-            // --- 핸들러 ---
-            const handleConnect = () => {
-                if (!tempAppId.trim()) return;
+            // 상세 데이터 자동 갱신 로직 (data가 변하면 selectedChar도 최신화)
+            useEffect(() => {
+                if (selectedChar) {
+                    const all = Object.values(data).flat();
+                    const found = all.find(c => c.id === selectedChar.id);
+                    if (found) {
+                        setSelectedChar({ ...found, _group: found.mythName });
+                    }
+                }
+            }, [data]);
+
+            const handleConnectConfig = async () => {
+                try {
+                    const config = JSON.parse(configInput);
+                    if (await DataEngine.connectFirebase(config)) {
+                        localStorage.setItem('firebase_config_custom', configInput);
+                        setShowConfig(false);
+                        setAppId(appId); 
+                        alert("서버에 성공적으로 연결되었습니다.");
+                    } else {
+                        alert("서버 연결에 실패하였습니다.");
+                    }
+                } catch(e) { alert("JSON 설정값이 올바르지 않습니다."); }
+            };
+
+            const handleIdChange = () => {
+                if(!tempAppId.trim()) return;
                 setAppId(tempAppId.trim());
                 DataEngine.appId = tempAppId.trim();
-                // 로컬 강제 갱신 트리거
                 window.dispatchEvent(new Event(`local-update-${tempAppId.trim()}`));
                 setSelectedChar(null);
             };
 
-            const handleAdd = async () => {
-                if (!form.mythName || !form.name) return alert("소속과 이름을 입력하세요.");
-                const id = Date.now().toString();
+            const handleAddChar = async () => {
+                if (!form.mythName || !form.name) return alert("소속과 이름을 모두 입력하십시오.");
+                const id = "char_" + Date.now();
                 const newChar = {
-                    ...form,
-                    age: '', gender: '', size: '', alias: '', group: '', otherInfo: '',
-                    hasTimeline: true, logs: [], 
-                    createdAt: new Date().toLocaleDateString()
+                    ...form, age: '', gender: '', size: '', alias: '', group: '', otherInfo: '',
+                    hasTimeline: true, logs: [], createdAt: new Date().toLocaleDateString()
                 };
-                await DataEngine.save(id, newChar);
+                await DataEngine.performAction(id, newChar);
                 setForm({ mythName: '', name: '', summary: '' });
             };
 
-            const openDetails = (char) => {
-                setSelectedChar(char);
-                setEditForm({ ...char });
+            const handleUpdateChar = async () => {
+                // 수정 시 기존 logs 보존을 위해 현재 상태와 병합
+                const updatedData = { ...selectedChar, ...editForm, mythName: editForm.mythName };
+                await DataEngine.performAction(selectedChar.id, updatedData);
                 setIsEditing(false);
             };
 
-            const saveDetails = async () => {
-                await DataEngine.save(selectedChar.id, editForm);
-                setIsEditing(false);
-                setSelectedChar({...editForm, id: selectedChar.id});
+            const handleDeleteConfirmed = async () => {
+                if (!deleteTarget) return;
+                if (deleteTarget.type === 'char') {
+                    await DataEngine.performAction(deleteTarget.id, null, true);
+                    setSelectedChar(null);
+                } else {
+                    const updatedLogs = selectedChar.logs.filter(l => l.id !== deleteTarget.logId);
+                    const updatedChar = { ...selectedChar, logs: updatedLogs, mythName: selectedChar._group };
+                    await DataEngine.performAction(selectedChar.id, updatedChar);
+                }
+                setDeleteTarget(null);
             };
 
-            const deleteChar = async () => {
-                if (!confirm("삭제하시겠습니까?")) return;
-                await DataEngine.save(selectedChar.id, null, true);
-                setSelectedChar(null);
-            };
-
-            const addLog = async () => {
-                if (!logText) return;
-                const newLog = { id: Date.now().toString(), date: logDate, text: logText };
+            const handleAddLog = async () => {
+                if (!logText.trim() || !selectedChar) return;
+                const newLog = { id: "log_" + Date.now(), date: logDate, text: logText };
                 const updatedLogs = [newLog, ...(selectedChar.logs || [])];
-                const updatedChar = { ...selectedChar, logs: updatedLogs };
-                await DataEngine.save(selectedChar.id, updatedChar);
-                setSelectedChar(updatedChar);
+                const updatedChar = { ...selectedChar, logs: updatedLogs, mythName: selectedChar._group };
+                
+                await DataEngine.performAction(selectedChar.id, updatedChar);
                 setLogText('');
             };
 
-            const deleteLog = async (logId) => {
-                if (!confirm("기록을 삭제할까요?")) return;
-                const updatedLogs = selectedChar.logs.filter(l => l.id !== logId);
-                const updatedChar = { ...selectedChar, logs: updatedLogs };
-                await DataEngine.save(selectedChar.id, updatedChar);
-                setSelectedChar(updatedChar);
-            };
-
-            const exportFile = () => {
-                const blob = new Blob([JSON.stringify({ appId, data }, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `archive_${appId}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            };
-
-            const importFile = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = async (evt) => {
-                    try {
-                        const loaded = JSON.parse(evt.target.result);
-                        if (!loaded.data) return alert("파일 형식이 맞지 않습니다.");
-                        if (confirm("데이터를 불러오시겠습니까?")) {
-                            await DataEngine.import(loaded.data);
-                            alert("완료되었습니다.");
-                        }
-                    } catch(e) { alert("파일 오류"); }
-                };
-                reader.readAsText(file);
-            };
-
-            const globalTimeline = useMemo(() => {
+            const sortedLogs = useMemo(() => {
                 return Object.entries(data).flatMap(([group, chars]) => 
                     chars.filter(c => c.hasTimeline)
                          .flatMap(c => (c.logs || []).map(l => ({ ...l, charName: c.name, mythName: group })))
@@ -361,90 +308,113 @@
             }, [data]);
 
             return (
-                <div className="min-h-screen p-6 md:p-12 max-w-7xl mx-auto">
-                    <header className="text-center mb-12 border-b border-[#AAB8B0] pb-8 relative">
-                        <div className="absolute top-0 right-0 text-[10px] opacity-40 font-bold uppercase tracking-widest flex items-center gap-1">
-                            {isOnline ? <Icons.Wifi className="text-green-600"/> : <Icons.WifiOff/>}
-                            {isOnline ? "온라인(공유 가능)" : "오프라인(내부 저장)"}
+                <div className="min-h-screen p-6 md:p-12 max-w-7xl mx-auto relative">
+                    {/* 삭제 확인 모달 */}
+                    {deleteTarget && (
+                        <div className="fixed inset-0 z-[1000] modal-overlay flex items-center justify-center p-4">
+                            <div className="bg-white p-8 rounded-3xl w-full max-w-xs text-center shadow-2xl">
+                                <Icon name="Trash2" className="mx-auto mb-4 text-red-400" size={32} />
+                                <h3 className="text-lg font-bold mb-2">삭제하시겠습니까?</h3>
+                                <p className="text-xs opacity-60 mb-6">해당 기록을 영구적으로 삭제합니다.</p>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 bg-gray-100 rounded-2xl font-bold">취소</button>
+                                    <button onClick={handleDeleteConfirmed} className="flex-1 py-3 bg-red-500 text-white rounded-2xl font-bold">삭제</button>
+                                </div>
+                            </div>
                         </div>
-                        <h1 className="text-header text-[#4D5A51] mb-3">캐릭터 아카이브</h1>
-                        <p className="opacity-50 font-bold uppercase tracking-widest text-xs">통합 인물 기록 시스템</p>
+                    )}
+
+                    <header className="text-center mb-10 border-b border-[#AAB8B0] pb-6 relative">
+                        <div className="absolute top-0 right-0 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 cursor-pointer" onClick={() => setShowConfig(true)}>
+                            {isOnline ? <span className="text-green-600 flex items-center gap-1"><Icon name="Wifi"/> 온라인</span> : <span className="text-gray-400 flex items-center gap-1"><Icon name="Cloud"/> 연결</span>}
+                        </div>
+                        <h1 className="text-header text-[#4D5A51] mb-2">캐릭터 아카이브</h1>
+                        <p className="opacity-50 font-bold uppercase tracking-widest text-xs">최종 보수된 기록 시스템</p>
                     </header>
 
-                    {/* 제어판 */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10 max-w-4xl mx-auto">
-                        <div className="bg-white p-4 rounded-2xl border border-[#E2EAE5] shadow-soft flex flex-col gap-2">
-                            <div className="flex items-center gap-2 opacity-50 font-bold uppercase text-xs mb-1">
-                                <Icons.Share2 /> 공유 식별자 (ID)
-                            </div>
-                            <div className="flex gap-2 w-full">
-                                <input 
-                                    type="text" 
-                                    value={tempAppId} 
-                                    onChange={e=>setTempAppId(e.target.value)} 
-                                    className="flex-1 min-w-0 bg-[#F8F9F8] p-3 rounded-2xl border border-[#E2EAE5] outline-none text-ellipsis" 
-                                    placeholder="ID 입력" 
-                                />
-                                <button 
-                                    onClick={handleConnect} 
-                                    className="flex-shrink-0 bg-[#98B0A0] text-white px-6 py-3 rounded-2xl font-bold hover:bg-[#7A9482] transition-all whitespace-nowrap"
-                                >
-                                    이동
-                                </button>
+                    {showConfig && (
+                        <div className="fixed inset-0 z-[60] modal-overlay flex items-center justify-center p-4">
+                            <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl">
+                                <h3 className="text-lg font-bold mb-2">서버 공유 설정</h3>
+                                <p className="text-[10px] opacity-60 mb-4 leading-relaxed">Firebase 구성 JSON 정보를 입력하면 벗들과 실시간으로 기록을 공유할 수 있습니다.</p>
+                                <textarea className="w-full h-32 p-3 border rounded-2xl text-xs font-mono bg-gray-50 mb-4 outline-none" value={configInput} onChange={e => setConfigInput(e.target.value)} placeholder='{"apiKey": "...", ...}'></textarea>
+                                <div className="flex gap-2 justify-end">
+                                    <button onClick={() => setShowConfig(false)} className="px-4 py-2 text-xs font-bold text-gray-500 rounded-2xl">취소</button>
+                                    <button onClick={handleConnectConfig} className="px-4 py-2 text-xs font-bold text-white bg-[#98B0A0] rounded-2xl">연결하기</button>
+                                </div>
                             </div>
                         </div>
-                        <div className="bg-white p-4 rounded-2xl border border-[#E2EAE5] shadow-soft flex gap-2 justify-center items-center">
-                            <button onClick={exportFile} className="flex-1 py-3 bg-white border border-[#E2EAE5] font-bold rounded-2xl hover:bg-[#F8F9F8] flex items-center justify-center gap-2 transition-all h-full">
-                                <Icons.Download /> 저장
-                            </button>
-                            <label className="flex-1 py-3 bg-white border border-[#E2EAE5] font-bold rounded-2xl hover:bg-[#F8F9F8] flex items-center justify-center gap-2 cursor-pointer transition-all h-full">
-                                <Icons.Upload /> 불러오기
-                                <input type="file" onChange={importFile} className="hidden" />
-                            </label>
+                    )}
+
+                    <div className="flex flex-wrap gap-4 justify-center mb-10">
+                        <div className="flex gap-2 items-center bg-white px-4 py-2 rounded-2xl border shadow-soft">
+                            <span className="opacity-50 text-xs font-bold uppercase">공유 ID</span>
+                            <input type="text" value={tempAppId} onChange={e=>setTempAppId(e.target.value)} className="w-24 bg-transparent outline-none font-bold text-[#4D5A51]" />
+                            <button onClick={handleIdChange} className="text-xs bg-[#F1F5F2] px-3 py-1 rounded-xl font-bold">이동</button>
                         </div>
+                        <button onClick={() => {
+                            const blob = new Blob([JSON.stringify({ appId, data }, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a'); a.href = url; a.download = `archive_${appId}.json`; a.click();
+                        }} className="bg-white px-6 py-3 rounded-2xl border border-[#E2EAE5] shadow-soft font-bold flex items-center gap-2 transition-all"><Icon name="Download" /> 파일 저장</button>
+                        <label className="bg-white px-6 py-3 rounded-2xl border border-[#E2EAE5] shadow-soft font-bold flex items-center gap-2 cursor-pointer transition-all">
+                            <Icon name="Upload" /> 불러오기
+                            <input type="file" onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = (evt) => {
+                                    const loaded = JSON.parse(evt.target.result);
+                                    if (loaded.data) {
+                                        localStorage.setItem(`archive_${appId}`, JSON.stringify(loaded.data));
+                                        window.dispatchEvent(new Event(`local-update-${appId}`));
+                                    }
+                                };
+                                reader.readAsText(file);
+                            }} className="hidden" />
+                        </label>
                     </div>
 
-                    {/* 탭 */}
                     <div className="flex justify-center gap-4 mb-10">
-                        <button onClick={()=>setViewMode('list')} className={`px-10 py-3 rounded-2xl font-bold border transition-all ${viewMode==='list'?'bg-[#98B0A0] text-white':'bg-white text-[#4D5A51]'}`}>인물 목록</button>
-                        <button onClick={()=>setViewMode('timeline')} className={`px-10 py-3 rounded-2xl font-bold border transition-all ${viewMode==='timeline'?'bg-[#98B0A0] text-white':'bg-white text-[#4D5A51]'}`}>전체 연대기</button>
+                        <button onClick={()=>setViewMode('list')} className={`px-10 py-3 rounded-2xl font-bold border transition-all ${viewMode==='list'?'bg-[#98B0A0] text-white shadow-md':'bg-white text-[#4D5A51]'}`}>인물 목록</button>
+                        <button onClick={()=>setViewMode('timeline')} className={`px-10 py-3 rounded-2xl font-bold border transition-all ${viewMode==='timeline'?'bg-[#98B0A0] text-white shadow-md':'bg-white text-[#4D5A51]'}`}>전체 연대기</button>
                     </div>
 
-                    {/* 목록 뷰 */}
                     {viewMode === 'list' && (
                         <div className="flex flex-col lg:flex-row gap-8">
-                            <aside className="w-full lg:w-80 bg-white/50 p-6 border border-[#E2EAE5] rounded-2xl h-fit sticky top-8">
-                                <h3 className="font-bold border-b border-[#AAB8B0] pb-3 mb-4 uppercase text-xs flex items-center gap-2 opacity-70">
-                                    <Icons.Plus /> 신규 등록
-                                </h3>
+                            <aside className="w-full lg:w-[280px] bg-white/50 p-6 border border-[#E2EAE5] rounded-2xl h-fit sticky top-8">
+                                <h3 className="font-bold border-b border-[#AAB8B0] pb-3 mb-4 uppercase text-xs flex items-center gap-2 opacity-70"><Icon name="Plus" /> 신규 등록</h3>
                                 <div className="space-y-4">
-                                    <input type="text" value={form.mythName} onChange={e=>setForm({...form, mythName:e.target.value})} className="w-full p-2.5 bg-white border border-[#E2EAE5] rounded-2xl outline-none" placeholder="소속 (예: 그리스 신화)" />
+                                    <input type="text" value={form.mythName} onChange={e=>setForm({...form, mythName:e.target.value})} className="w-full p-2.5 bg-white border border-[#E2EAE5] rounded-2xl outline-none" placeholder="소속 분류" />
                                     <input type="text" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 bg-white border border-[#E2EAE5] rounded-2xl outline-none" placeholder="이름" />
                                     <textarea value={form.summary} onChange={e=>setForm({...form, summary:e.target.value})} className="w-full p-2.5 bg-white border border-[#E2EAE5] rounded-2xl outline-none resize-none h-20" placeholder="간단 요약"></textarea>
-                                    <button onClick={handleAdd} className="w-full py-3 bg-[#98B0A0] text-white font-bold rounded-2xl hover:bg-[#7A9482] transition-all">등록하기</button>
+                                    <button onClick={handleAddChar} className="w-full py-3 bg-[#98B0A0] text-white font-bold rounded-2xl hover:bg-[#7A9482] transition-all">등록하기</button>
                                 </div>
                             </aside>
 
                             <main className="flex-1 space-y-10">
-                                {Object.keys(data).length === 0 ? <div className="text-center py-20 opacity-40 italic">아직 등록된 인물이 없습니다.</div> :
+                                {Object.keys(data).length === 0 ? <div className="text-center py-20 opacity-40 italic">서고가 비어있습니다.</div> :
                                 Object.keys(data).sort().map(group => (
                                     <section key={group}>
                                         <h3 className="text-sub mb-4 border-l-4 border-[#98B0A0] pl-3 text-[#4D5A51] uppercase">{group}</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                             {data[group].map(char => (
-                                                <div key={char.id} onClick={()=>{openDetails(char, group)}} className="bg-white p-5 rounded-2xl border border-[#E2EAE5] shadow-soft cursor-pointer hover:-translate-y-1 transition-all group flex flex-col">
+                                                <div key={char.id} onClick={()=>{ setSelectedChar({ ...char, _group: group }); setEditForm({ ...char, mythName: group }); }} className="bg-white p-5 rounded-2xl border border-[#E2EAE5] shadow-soft cursor-pointer hover:-translate-y-1 transition-all group flex flex-col relative">
                                                     <div className="flex justify-between mb-3 opacity-40">
-                                                        {char.hasTimeline ? <Icons.Clock/> : <Icons.FileText/>}
-                                                        <Icons.ChevronRight />
+                                                        {char.hasTimeline ? <Icon name="Clock"/> : <Icon name="FileText"/>}
+                                                        <div className="flex gap-2">
+                                                            <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({type:'char', id:char.id, name:char.name}); }} className="text-red-300 hover:text-red-500 transition-colors p-1"><Icon name="Trash2" /></button>
+                                                            <Icon name="ChevronRight" />
+                                                        </div>
                                                     </div>
-                                                    <h4 className="text-card mb-2 group-hover:text-[#6B8E23] transition-colors">{char.name}</h4>
+                                                    <h4 className="text-card mb-2 group-hover:text-[#6B8E23] transition-colors font-bold text-[14px]">{char.name}</h4>
                                                     <p className="opacity-70 line-clamp-2 leading-relaxed">{char.summary}</p>
-                                                    {char.alias && <div className="mt-auto pt-3 text-[#98B0A0] font-bold opacity-80 uppercase tracking-wider">{char.alias}</div>}
                                                 </div>
                                             ))}
                                         </div>
                                     </section>
-                                ))}
+                                ))
+                                }
                             </main>
                         </div>
                     )}
@@ -453,71 +423,82 @@
                         <div className="max-w-3xl mx-auto bg-white p-10 rounded-2xl border border-[#E2EAE5] shadow-soft relative">
                             <h2 className="text-center font-bold text-xl mb-10 uppercase tracking-widest text-[#4A5D50]">통합 연대기</h2>
                             <div className="space-y-0">
-                                {globalTimeline.map(log => (
+                                {sortedLogs.map(log => (
                                     <div key={log.id} className="timeline-wrapper">
                                         <div className="timeline-line"></div>
                                         <div className="timeline-dot"></div>
-                                        <div className="font-bold opacity-40 mb-1 uppercase text-xs">{log.date}</div>
-                                        <div className="font-bold mb-2 text-base">{log.charName} <span className="opacity-40 text-xs ml-1">[{log.mythName}]</span></div>
+                                        <div className="font-bold opacity-40 mb-1 uppercase text-[10px]">{log.date}</div>
+                                        <div className="font-bold mb-2 text-base text-[14px]">{log.charName} <span className="opacity-40 text-[10px] ml-1">[{log.mythName}]</span></div>
                                         <div className="bg-[#F9FBF9] p-4 rounded-2xl border border-[#E2EAE5] leading-relaxed">{log.text}</div>
                                     </div>
                                 ))}
-                                {globalTimeline.length === 0 && <div className="text-center opacity-40 py-10">기록된 연대기가 없습니다.</div>}
                             </div>
                         </div>
                     )}
 
                     {selectedChar && (
-                        <div className="fixed inset-0 z-50 bg-[#F1F5F2] overflow-y-auto p-4 md:p-10 no-scrollbar">
-                            <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden min-h-full md:min-h-0 border border-[#E2EAE5]">
+                        <div className="fixed inset-0 z-[500] bg-[#F1F5F2] overflow-y-auto p-4 md:p-10 no-scrollbar">
+                            <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden border border-[#E2EAE5] flex flex-col">
                                 <header className="p-8 border-b border-[#E2EAE5] flex justify-between items-center bg-white sticky top-0 z-20">
                                     <div className="flex items-center gap-4">
                                         <h2 className="text-header text-[#4D5A51]">{selectedChar.name}</h2>
-                                        <span className="px-3 py-1 border border-[#98B0A0] text-[#98B0A0] rounded-2xl font-bold text-xs uppercase">{selectedChar.hasTimeline ? '연대기 모드' : '정보 모드'}</span>
+                                        <span className="px-3 py-1 border border-[#98B0A0] text-[#98B0A0] rounded-2xl font-bold text-[10px] uppercase">{selectedChar.hasTimeline ? '연대기' : '정보'}</span>
                                     </div>
-                                    <button onClick={()=>setSelectedChar(null)} className="px-6 py-2 bg-[#98B0A0] text-white font-bold rounded-2xl hover:bg-[#7A9482] transition-all">닫기</button>
+                                    <button onClick={()=>setSelectedChar(null)} className="px-6 py-2 bg-[#98B0A0] text-white font-bold rounded-2xl transition-all">닫기</button>
                                 </header>
 
                                 <div className="p-8 flex flex-col lg:flex-row gap-10">
                                     <aside className="w-full lg:w-[420px] space-y-6">
                                         <div className="flex justify-between items-center border-b border-[#E2EAE5] pb-2">
-                                            <h3 className="font-bold opacity-50 uppercase text-xs flex items-center gap-2"><Icons.UserCircle/> 고정 정보</h3>
-                                            <button onClick={()=>setIsEditing(!isEditing)} className="font-bold text-xs border-b border-[#4D5A51] text-[#4D5A51]">{isEditing ? '취소' : '편집'}</button>
+                                            <h3 className="font-bold opacity-50 uppercase text-[10px] flex items-center gap-2"><Icon name="UserCircle"/> 상세 프로필</h3>
+                                            <button onClick={()=>setIsEditing(!isEditing)} className="font-bold text-[10px] border-b border-[#4D5A51] text-[#4D5A51]">{isEditing ? '취소' : '수정'}</button>
                                         </div>
 
                                         {isEditing ? (
-                                            <div className="space-y-3 bg-[#F9FBF9] p-6 rounded-2xl border border-[#E2EAE5]">
+                                            <div className="space-y-4 bg-[#F9FBF9] p-6 rounded-2xl border border-[#E2EAE5]">
                                                 <div className="grid grid-cols-2 gap-3">
-                                                    <div><label className="block font-bold opacity-40 mb-1">소속</label><input type="text" value={editForm.mythName} onChange={e=>setEditForm({...editForm, mythName:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
-                                                    <div><label className="block font-bold opacity-40 mb-1">이름</label><input type="text" value={editForm.name} onChange={e=>setEditForm({...editForm, name:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
-                                                    <div><label className="block font-bold opacity-40 mb-1">나이</label><input type="text" value={editForm.age} onChange={e=>setEditForm({...editForm, age:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
-                                                    <div><label className="block font-bold opacity-40 mb-1">성별</label><input type="text" value={editForm.gender} onChange={e=>setEditForm({...editForm, gender:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
-                                                    <div><label className="block font-bold opacity-40 mb-1">크기</label><input type="text" value={editForm.size} onChange={e=>setEditForm({...editForm, size:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
-                                                    <div><label className="block font-bold opacity-40 mb-1">별칭</label><input type="text" value={editForm.alias} onChange={e=>setEditForm({...editForm, alias:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
+                                                    <div className="col-span-2"><label className="block font-bold opacity-40 mb-1 text-[10px]">소속 분류</label><input type="text" value={editForm.mythName} onChange={e=>setEditForm({...editForm, mythName:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
+                                                    <div className="col-span-2"><label className="block font-bold opacity-40 mb-1 text-[10px]">이름</label><input type="text" value={editForm.name} onChange={e=>setEditForm({...editForm, name:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
+                                                    <div><label className="block font-bold opacity-40 mb-1 text-[10px]">나이</label><input type="text" value={editForm.age} onChange={e=>setEditForm({...editForm, age:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
+                                                    <div><label className="block font-bold opacity-40 mb-1 text-[10px]">성별</label><input type="text" value={editForm.gender} onChange={e=>setEditForm({...editForm, gender:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
+                                                    <div><label className="block font-bold opacity-40 mb-1 text-[10px]">크기</label><input type="text" value={editForm.size} onChange={e=>setEditForm({...editForm, size:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
+                                                    <div><label className="block font-bold opacity-40 mb-1 text-[10px]">별칭</label><input type="text" value={editForm.alias} onChange={e=>setEditForm({...editForm, alias:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
                                                 </div>
-                                                <div><label className="block font-bold opacity-40 mb-1">소속 단체</label><input type="text" value={editForm.group} onChange={e=>setEditForm({...editForm, group:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
-                                                <div><label className="block font-bold opacity-40 mb-1">상세 설정</label><textarea value={editForm.otherInfo} onChange={e=>setEditForm({...editForm, otherInfo:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none h-32"></textarea></div>
-                                                <div className="flex items-center gap-4 py-2">
-                                                    <label className="font-bold opacity-40">연대기 기능</label>
-                                                    <button onClick={()=>setEditForm({...editForm, hasTimeline:!editForm.hasTimeline})} className={`px-4 py-1 rounded-2xl font-bold border ${editForm.hasTimeline?'bg-[#98B0A0] text-white':'bg-white'}`}>{editForm.hasTimeline ? '사용' : '미사용'}</button>
-                                                </div>
+                                                <div><label className="block font-bold opacity-40 mb-1 text-[10px]">소속 단체</label><input type="text" value={editForm.group} onChange={e=>setEditForm({...editForm, group:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none"/></div>
+                                                <div><label className="block font-bold opacity-40 mb-1 text-[10px]">요약</label><textarea value={editForm.summary} onChange={e=>setEditForm({...editForm, summary:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none resize-none"></textarea></div>
+                                                <div><label className="block font-bold opacity-40 mb-1 text-[10px]">상세 설정</label><textarea value={editForm.otherInfo} onChange={e=>setEditForm({...editForm, otherInfo:e.target.value})} className="w-full p-2 bg-white border border-[#E2EAE5] rounded-2xl outline-none h-32"></textarea></div>
                                                 <div className="flex gap-2 pt-4">
-                                                    <button onClick={saveDetails} className="flex-1 py-3 bg-[#98B0A0] text-white font-bold rounded-2xl hover:bg-[#7A9482] transition-all">저장하기</button>
-                                                    <button onClick={deleteChar} className="px-4 py-3 border border-red-200 text-red-400 font-bold rounded-2xl hover:bg-red-50 transition-all">삭제</button>
+                                                    <button onClick={handleUpdateChar} className="flex-1 py-3 bg-[#98B0A0] text-white font-bold rounded-2xl transition-all shadow-md">수정 저장</button>
+                                                    <button onClick={() => setDeleteTarget({type:'char', id:selectedChar.id, name:selectedChar.name})} className="px-4 py-3 border border-red-200 text-red-400 font-bold rounded-2xl transition-all">삭제</button>
                                                 </div>
                                             </div>
                                         ) : (
                                             <div className="space-y-6 bg-white rounded-2xl">
+                                                {/* 소속과 이름을 상단에 크게 고정 */}
+                                                <div className="bg-[#F9FBF9] p-6 rounded-2xl border border-[#E2EAE5] shadow-inner mb-4">
+                                                    <div className="mb-4">
+                                                        <span className="block font-bold opacity-30 text-[9px] uppercase tracking-widest">Category</span>
+                                                        <span className="font-bold text-lg text-[#98B0A0]">{selectedChar._group}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="block font-bold opacity-30 text-[9px] uppercase tracking-widest">Full Name</span>
+                                                        <span className="font-bold text-2xl tracking-tight leading-none">{selectedChar.name}</span>
+                                                    </div>
+                                                </div>
+
                                                 <div className="grid grid-cols-2 gap-y-6 gap-x-4 text-center">
-                                                    <div><span className="block font-bold opacity-30 mb-1">나이</span><span className="font-bold text-lg">{selectedChar.age || '-'}</span></div>
-                                                    <div><span className="block font-bold opacity-30 mb-1">성별</span><span className="font-bold text-lg">{selectedChar.gender || '-'}</span></div>
-                                                    <div><span className="block font-bold opacity-30 mb-1">크기</span><span className="font-bold text-lg">{selectedChar.size || '-'}</span></div>
-                                                    <div><span className="block font-bold opacity-30 mb-1">별칭</span><span className="font-bold text-lg">{selectedChar.alias || '-'}</span></div>
-                                                    <div className="col-span-2 border-t border-[#E2EAE5] pt-4"><span className="block font-bold opacity-30 mb-1">소속 단체</span><span className="font-bold">{selectedChar.group || '-'}</span></div>
+                                                    <div><span className="block font-bold opacity-30 mb-1 text-[10px]">나이</span><span className="font-bold text-lg text-[14px]">{selectedChar.age || '-'}</span></div>
+                                                    <div><span className="block font-bold opacity-30 mb-1 text-[10px]">성별</span><span className="font-bold text-lg text-[14px]">{selectedChar.gender || '-'}</span></div>
+                                                    <div><span className="block font-bold opacity-30 mb-1 text-[10px]">크기</span><span className="font-bold text-lg text-[14px]">{selectedChar.size || '-'}</span></div>
+                                                    <div><span className="block font-bold opacity-30 mb-1 text-[10px]">별칭</span><span className="font-bold text-lg text-[14px]">{selectedChar.alias || '-'}</span></div>
+                                                    <div className="col-span-2 border-t border-[#E2EAE5] pt-4"><span className="block font-bold opacity-30 mb-1 text-[10px]">소속 단체</span><span className="font-bold text-[14px]">{selectedChar.group || '-'}</span></div>
                                                 </div>
                                                 <div className="pt-4 border-t border-[#E2EAE5]">
-                                                    <label className="block font-bold opacity-30 mb-2 text-center uppercase tracking-widest">상세 설정 노트</label>
-                                                    <div className="bg-[#F9FBF9] p-6 rounded-2xl leading-loose text-justify shadow-inner min-h-[150px] whitespace-pre-wrap">{selectedChar.otherInfo || '상세 정보가 없습니다.'}</div>
+                                                    <label className="block font-bold opacity-30 mb-2 text-center text-[10px] uppercase tracking-widest">Details</label>
+                                                    <div className="bg-[#F9FBF9] p-6 rounded-2xl leading-loose whitespace-pre-wrap text-justify min-h-[150px]">{selectedChar.otherInfo || '기록이 없습니다.'}</div>
+                                                </div>
+                                                <div className="pt-4 text-center">
+                                                    <button onClick={() => setDeleteTarget({type:'char', id:selectedChar.id, name:selectedChar.name})} className="text-red-300 hover:text-red-500 font-bold text-[10px] uppercase flex items-center justify-center gap-1 w-full p-4 transition-all"><Icon name="Trash2" width="12" /> 이 기록 삭제하기</button>
                                                 </div>
                                             </div>
                                         )}
@@ -527,24 +508,24 @@
                                         {selectedChar.hasTimeline ? (
                                             <div className="max-w-2xl mx-auto space-y-10">
                                                 <div className="bg-white p-8 rounded-2xl border border-[#E2EAE5] shadow-soft">
-                                                    <h3 className="font-bold opacity-50 mb-6 flex items-center gap-2 text-xs uppercase"><Icons.Clock/> 사건 기록</h3>
+                                                    <h3 className="font-bold opacity-50 mb-6 flex items-center gap-2 text-xs uppercase"><Icon name="Clock"/> 새로운 기록 등록</h3>
                                                     <div className="flex flex-col gap-4">
-                                                        <div className="flex gap-4">
-                                                            <input type="date" value={logDate} onChange={e=>setLogDate(e.target.value)} className="w-1/3 p-3 bg-[#F9FBF9] border border-[#E2EAE5] rounded-2xl outline-none" />
-                                                            <input type="text" value={logText} onChange={e=>setLogText(e.target.value)} className="flex-1 p-3 bg-[#F9FBF9] border border-[#E2EAE5] rounded-2xl outline-none" placeholder="사건 내용" />
+                                                        <div className="flex flex-wrap gap-4">
+                                                            <input type="date" value={logDate} onChange={e=>setLogDate(e.target.value)} className="w-full md:w-fit p-3 bg-[#F9FBF9] border border-[#E2EAE5] rounded-2xl outline-none focus:ring-1 focus:ring-[#98B0A0]" />
+                                                            <input type="text" value={logText} onChange={e=>setLogText(e.target.value)} className="flex-1 p-3 bg-[#F9FBF9] border border-[#E2EAE5] rounded-2xl outline-none focus:ring-1 focus:ring-[#98B0A0]" placeholder="내용을 입력하십시오" />
                                                         </div>
-                                                        <button onClick={addLog} className="w-full py-3 bg-[#98B0A0] text-white font-bold rounded-2xl shadow-md hover:bg-[#7A9482] transition-all">기록하기</button>
+                                                        <button onClick={handleAddLog} className="w-full py-4 bg-[#98B0A0] text-white font-bold rounded-2xl shadow-md hover:bg-[#7A9482] transition-all">기록 등록</button>
                                                     </div>
                                                 </div>
 
                                                 <div className="space-y-0">
                                                     {(selectedChar.logs||[]).map(log => (
-                                                        <div key={log.id} className="timeline-wrapper">
+                                                        <div key={log.id} className="timeline-wrapper group">
                                                             <div className="timeline-line"></div>
                                                             <div className="timeline-dot"></div>
                                                             <div className="flex justify-between items-start mb-2">
-                                                                <span className="font-bold opacity-40 uppercase tracking-widest">{log.date}</span>
-                                                                <button onClick={()=>deleteLog(log.id)} className="opacity-20 hover:text-red-500 transition-colors"><Icons.Trash2 /></button>
+                                                                <span className="font-bold opacity-40 uppercase tracking-widest text-[9px]">{log.date}</span>
+                                                                <button onClick={() => setDeleteTarget({type:'log', logId:log.id})} className="opacity-0 group-hover:opacity-40 hover:opacity-100 text-red-500 transition-all p-1"><Icon name="Trash2" width="14"/></button>
                                                             </div>
                                                             <div className="bg-white p-5 rounded-2xl border border-[#E2EAE5] shadow-sm leading-relaxed text-justify">{log.text}</div>
                                                         </div>
@@ -553,8 +534,7 @@
                                             </div>
                                         ) : (
                                             <div className="h-full flex flex-col items-center justify-center opacity-20 border-2 border-dashed border-[#AAB8B0] rounded-2xl p-20 bg-[#F9FBF9]">
-                                                <Icons.History />
-                                                <p className="mt-6 font-bold text-center">연대기 기능이 꺼져 있습니다.</p>
+                                                <p className="font-bold text-center">연대기 기능이 비활성화되어 있습니다.</p>
                                             </div>
                                         )}
                                     </main>
@@ -571,5 +551,4 @@
     </script>
 </body>
 </html>
-
 
